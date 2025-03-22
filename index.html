@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tetris Game</title>
+  <style>
+    body {
+      background: #333;
+      color: #fff;
+      text-align: center;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      margin-top: 1em;
+      margin-bottom: 1em;
+    }
+    #tetris {
+      border: 1px solid #fff;
+      display: block;
+      margin: 0 auto;
+      background: #000;
+    }
+    #score {
+      font-size: 1.2em;
+      margin: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <h1>TETRIS</h1>
+  <canvas id="tetris" width="240" height="400"></canvas>
+  <div id="score">Score: 0</div>
+  <script>
+    const canvas = document.getElementById('tetris');
+    const context = canvas.getContext('2d');
+
+    // 캔버스 픽셀 크기 확대(가독성을 위해)
+    context.scale(20, 20);
+
+    // 블록 모양(테트리스 조각) 정의
+    const SHAPES = {
+      T: [
+        [0, 0, 0],
+        [1, 1, 1],
+        [0, 1, 0],
+      ],
+      O: [
+        [2, 2],
+        [2, 2],
+      ],
+      L: [
+        [3, 0, 0],
+        [3, 0, 0],
+        [3, 3, 0],
+      ],
+      J: [
+        [0, 4, 0],
+        [0, 4, 0],
+        [4, 4, 0],
+      ],
+      S: [
+        [0, 5, 5],
+        [5, 5, 0],
+        [0, 0, 0],
+      ],
+      Z: [
+        [6, 6, 0],
+        [0, 6, 6],
+        [0, 0, 0],
+      ],
+      I: [
+        [7, 0, 0, 0],
+        [7, 0, 0, 0],
+        [7, 0, 0, 0],
+        [7, 0, 0, 0],
+      ],
+    };
+
+    // 색상(각 번호별로 표시할 색)
+    const COLORS = [
+      null,       // 0번은 빈 칸
+      'cyan',     // 1
+      'yellow',   // 2
+      'orange',   // 3
+      'blue',     // 4
+      'lime',     // 5
+      'red',      // 6
+      'magenta',  // 7
+    ];
+
+    // 게임판(2차원 배열)
+    const arena = createMatrix(12, 20);
+
+    // 플레이어 정보(블록 위치, 모양)
+    const player = {
+      pos: { x: 0, y: 0 },
+      matrix: null,
+      score: 0
+    };
+
+    // 새 블록 뽑기
+    function playerReset() {
+      const types = Object.keys(SHAPES);
+      const randType = types[Math.floor(types.length * Math.random())];
+      player.matrix = SHAPES[randType].map(row => row.slice());
+      // 블록이 중앙 상단에서 떨어지도록 설정
+      player.pos.x = (arena[0].length / 2 | 0) -
+                     (player.matrix[0].length / 2 | 0);
+      player.pos.y = 0;
+
+      // 시작 시점부터 충돌이면 게임 오버로 간주 가능 (간단히는 블록이 바닥에 바로 쌓이게 처리)
+      if (collide(arena, player)) {
+        arena.forEach(row => row.fill(0));
+        player.score = 0;
+        updateScore();
+      }
+    }
+
+    // 충돌 판정
+    function collide(arena, player) {
+      const m = player.matrix;
+      const o = player.pos;
+      for (let y = 0; y < m.length; y++) {
+        for (let x = 0; x < m[y].length; x++) {
+          if (m[y][x] !== 0 && 
+              (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // 2차원 배열(게임판) 생성
+    function createMatrix(w, h) {
+      const matrix = [];
+      while (h--) {
+        matrix.push(new Array(w).fill(0));
+      }
+      return matrix;
+    }
+
+    // 블록(행렬) 그리기
+    function drawMatrix(matrix, offset) {
+      matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) {
+            context.fillStyle = COLORS[value];
+            context.fillRect(x + offset.x, y + offset.y, 1, 1);
+          }
+        });
+      });
+    }
+
+    // 게임판(arena) 위에 있는 모든 것 그리기
+    function draw() {
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawMatrix(arena, { x: 0, y: 0 });
+      drawMatrix(player.matrix, player.pos);
+    }
+
+    // arena와 player가 겹친 부분을 arena에 합침(블록이 쌓임)
+    function merge(arena, player) {
+      player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) {
+            arena[y + player.pos.y][x + player.pos.x] = value;
+          }
+        });
+      });
+    }
+
+    // 한 줄이 모두 차면 제거
+    function arenaSweep() {
+      let rowCount = 1;
+      outer: for (let y = arena.length - 1; y >= 0; y--) {
+        for (let x = 0; x < arena[y].length; x++) {
+          if (arena[y][x] === 0) {
+            continue outer;
+          }
+        }
+        // 현재 줄이 가득 찼으므로 제거
+        const row = arena.splice(y, 1)[0].fill(0);
+        // 가장 위로 삽입
+        arena.unshift(row);
+        y++;
+        
+        // 점수 가중치
+        player.score += rowCount * 10;
+        rowCount *= 2;
+      }
+    }
+
+    // 블록 이동(아래로, 좌우)
+    function playerDrop() {
+      player.pos.y++;
+      if (collide(arena, player)) {
+        player.pos.y--;
+        merge(arena, player);
+        arenaSweep();
+        playerReset();
+        updateScore();
+      }
+      dropCounter = 0;
+    }
+
+    function playerMove(dir) {
+      player.pos.x += dir;
+      if (collide(arena, player)) {
+        player.pos.x -= dir;
+      }
+    }
+
+    // 블록 회전
+    function playerRotate(dir) {
+      const pos = player.pos.x;
+      let offset = 1;
+      rotate(player.matrix, dir);
+      while (collide(arena, player)) {
+        player.pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (offset > player.matrix[0].length) {
+          // 너무 많이 충돌하면 원 위치로 되돌림
+          rotate(player.matrix, -dir);
+          player.pos.x = pos;
+          return;
+        }
+      }
+    }
+
+    // 2차원 블록(행렬) 회전 구현
+    function rotate(matrix, dir) {
+      // 전치 후 뒤집기
+      for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < y; x++) {
+          [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+        }
+      }
+      if (dir > 0) {
+        matrix.forEach(row => row.reverse());
+      } else {
+        matrix.reverse();
+      }
+    }
+
+    // 프레임마다 update -> 블록 자동으로 떨어짐
+    let dropCounter = 0;
+    let dropInterval = 1000; // 1초 간격
+
+    let lastTime = 0;
+    function update(time = 0) {
+      const deltaTime = time - lastTime;
+      lastTime = time;
+
+      dropCounter += deltaTime;
+      if (dropCounter > dropInterval) {
+        playerDrop();
+      }
+
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    // 점수 업데이트
+    function updateScore() {
+      document.getElementById('score').innerText = 'Score: ' + player.score;
+    }
+
+    // 키 입력 처리
+    document.addEventListener('keydown', event => {
+      switch (event.key) {
+        case 'ArrowLeft':
+          playerMove(-1);
+          break;
+        case 'ArrowRight':
+          playerMove(1);
+          break;
+        case 'ArrowDown':
+          playerDrop();
+          break;
+        case 'ArrowUp':
+          playerRotate(1);
+          break;
+        case ' ':
+          // 스페이스바: 한 번에 바닥으로 내리기
+          while (!collide(arena, player)) {
+            player.pos.y++;
+          }
+          player.pos.y--;
+          merge(arena, player);
+          arenaSweep();
+          playerReset();
+          updateScore();
+          break;
+      }
+    });
+
+    // 초기화
+    playerReset();
+    updateScore();
+    update();
+  </script>
+</body>
+</html>
